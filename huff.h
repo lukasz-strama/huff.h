@@ -88,7 +88,7 @@ void huffman_print_code_table(const HuffCode *codes);
 #define HUFF_MAGIC "HUF1"
 #define HUFF_MAX_NODES (HUFF_MAX_SYMBOLS * 2)
 #define HUFF_IO_BUFFER_CAP (64 * 1024)
-#define HUFF_DEC_TABLE_BITS 8
+#define HUFF_DEC_TABLE_BITS 12
 #define HUFF_DEC_TABLE_SIZE (1 << HUFF_DEC_TABLE_BITS)
 
 // --- Internal Structures ---
@@ -150,7 +150,6 @@ static bool bit_writer_flush(BitWriter *writer);
 
 static void bit_reader_init(BitReader *reader, FILE *file);
 static bool bit_reader_fill_io(BitReader *reader);
-static bool bit_reader_read_bit(BitReader *reader, uint8_t *bit);
 static void bit_reader_free(BitReader *reader);
 
 static bool heap_less(const HuffHeap *heap, int a, int b);
@@ -286,24 +285,6 @@ static void bit_reader_ensure(BitReader *reader, uint32_t n) {
         reader->bit_buffer |= (uint64_t)reader->io_buffer[reader->io_pos++] << reader->bit_count;
         reader->bit_count += 8;
     }
-}
-
-static bool bit_reader_read_bit(BitReader *reader, uint8_t *bit) {
-    if (reader->bit_count == 0) {
-        // Fetch next byte from IO buffer
-        if (reader->io_pos >= reader->io_end) {
-            if (!bit_reader_fill_io(reader)) {
-                reader->exhausted = true;
-                return false;
-            }
-        }
-        reader->bit_buffer = reader->io_buffer[reader->io_pos++];
-        reader->bit_count = 8;
-    }
-    *bit = (uint8_t)(reader->bit_buffer & 1u);
-    reader->bit_buffer >>= 1;
-    reader->bit_count -= 1;
-    return true;
 }
 
 static void bit_reader_free(BitReader *reader) {
@@ -782,6 +763,16 @@ bool huffman_decode(const char *input_path, const char *output_path, HuffStats *
 next_entry:;
     }
 
+    // Output buffer
+    uint8_t *out_buffer = malloc(HUFF_IO_BUFFER_CAP);
+    if (!out_buffer) {
+        report_error("out of memory");
+        fclose(out);
+        fclose(in);
+        return false;
+    }
+    size_t out_pos = 0;
+
     BitReader reader;
     bit_reader_init(&reader, in);
     uint64_t produced = 0;
@@ -792,24 +783,27 @@ next_entry:;
         bit_reader_ensure(&reader, HUFF_DEC_TABLE_BITS);
         
         // Peek bits
-        uint8_t peek = (uint8_t)(reader.bit_buffer & (HUFF_DEC_TABLE_SIZE - 1));
+        uint16_t peek = (uint16_t)(reader.bit_buffer & (HUFF_DEC_TABLE_SIZE - 1));
         HuffDecEntry *entry = &table[peek];
         
         if (entry->symbol >= 0) {
             // Fast path: symbol found in table
             if (reader.bit_count < entry->bits) {
-                // Not enough bits? This can happen at EOF if file is truncated
-                // or if we are at the very end and have < 8 bits but enough for the symbol.
-                // If we have enough bits for THIS symbol, we are good.
                 if (reader.bit_count < entry->bits) {
                      report_error("unexpected end of stream");
                      goto decode_error;
                 }
             }
-            if (fputc((uint8_t)entry->symbol, out) == EOF) {
-                report_errno(output_path);
-                goto decode_error;
+            
+            out_buffer[out_pos++] = (uint8_t)entry->symbol;
+            if (out_pos == HUFF_IO_BUFFER_CAP) {
+                if (fwrite(out_buffer, 1, out_pos, out) != out_pos) {
+                    report_errno(output_path);
+                    goto decode_error;
+                }
+                out_pos = 0;
             }
+
             reader.bit_buffer >>= entry->bits;
             reader.bit_count -= entry->bits;
         } else {
@@ -823,23 +817,47 @@ next_entry:;
             
             int node_index = entry->next_node;
             while (nodes[node_index].left >= 0 || nodes[node_index].right >= 0) {
-                uint8_t bit = 0;
-                if (!bit_reader_read_bit(&reader, &bit)) {
-                    report_error("unexpected end of stream");
-                    goto decode_error;
+                // Inline bit reading
+                if (reader.bit_count == 0) {
+                    if (reader.io_pos >= reader.io_end) {
+                        if (!bit_reader_fill_io(&reader)) {
+                            report_error("unexpected end of stream");
+                            goto decode_error;
+                        }
+                    }
+                    reader.bit_buffer = reader.io_buffer[reader.io_pos++];
+                    reader.bit_count = 8;
                 }
+                
+                uint8_t bit = (uint8_t)(reader.bit_buffer & 1);
+                reader.bit_buffer >>= 1;
+                reader.bit_count--;
+
                 node_index = bit ? nodes[node_index].right : nodes[node_index].left;
                 if (node_index < 0) {
                     report_error("corrupted bitstream");
                     goto decode_error;
                 }
             }
-            if (fputc((uint8_t)nodes[node_index].symbol, out) == EOF) {
-                report_errno(output_path);
-                goto decode_error;
+            
+            out_buffer[out_pos++] = (uint8_t)nodes[node_index].symbol;
+            if (out_pos == HUFF_IO_BUFFER_CAP) {
+                if (fwrite(out_buffer, 1, out_pos, out) != out_pos) {
+                    report_errno(output_path);
+                    goto decode_error;
+                }
+                out_pos = 0;
             }
         }
         produced += 1;
+    }
+    
+    // Flush remaining output
+    if (out_pos > 0) {
+        if (fwrite(out_buffer, 1, out_pos, out) != out_pos) {
+            report_errno(output_path);
+            goto decode_error;
+        }
     }
     
     clock_t end_time = clock();
@@ -850,12 +868,14 @@ next_entry:;
         stats->time_taken = time_taken;
     }
 
+    free(out_buffer);
     bit_reader_free(&reader);
     fclose(out);
     fclose(in);
     return true;
 
 decode_error:
+    free(out_buffer);
     bit_reader_free(&reader);
     fclose(out);
     fclose(in);
