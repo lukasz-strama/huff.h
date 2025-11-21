@@ -70,13 +70,22 @@ typedef struct {
 } HuffCode;
 
 // Statistics structure
+// Pass a pointer to this structure to huffman_encode/decode to retrieve
+// performance and compression metrics.
+//
+// Usage:
+//   HuffStats stats;
+//   if (huffman_encode("in.txt", "out.huf", &stats) == HUFF_SUCCESS) {
+//       printf("Ratio: %.2f%%\n", 
+//              (1.0 - (double)stats.compressed_size / stats.original_size) * 100);
+//   }
 typedef struct {
-  uint64_t original_size;
-  uint64_t compressed_size;
-  double time_taken;
-  double entropy;
-  double avg_code_len;
-  HuffCode codes[HUFF_MAX_SYMBOLS];
+  uint64_t original_size;           // Size of input file in bytes
+  uint64_t compressed_size;         // Size of output file in bytes (0 for decode)
+  double time_taken;                // Execution time in seconds (wall clock)
+  double entropy;                   // Shannon entropy of input data (bits/symbol)
+  double avg_code_len;              // Average length of Huffman codes (bits/symbol)
+  HuffCode codes[HUFF_MAX_SYMBOLS]; // The generated Huffman codes table (see example in main.c)
 } HuffStats;
 
 /**
