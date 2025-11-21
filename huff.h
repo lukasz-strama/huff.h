@@ -85,7 +85,7 @@ void huffman_print_code_table(const HuffCode *codes);
 
 // --- Constants & Macros ---
 
-#define HUFF_MAGIC "HUF1"
+#define HUFF_MAGIC "HUF2"
 #define HUFF_MAX_NODES (HUFF_MAX_SYMBOLS * 2)
 #define HUFF_IO_BUFFER_CAP (64 * 1024)
 #define HUFF_DEC_TABLE_BITS 12
@@ -146,10 +146,12 @@ static int heap_pop(HuffHeap *heap);
 static int huff_build_tree(const uint64_t freq[HUFF_MAX_SYMBOLS], HuffNode *nodes, int *out_count);
 static void huff_collect_codes_rec(const HuffNode *nodes, int node_index, HuffCode *codes, uint8_t *path, uint16_t depth);
 static void huff_collect_codes(const HuffNode *nodes, int root, HuffCode *codes);
+static void huff_make_canonical(const uint8_t lengths[HUFF_MAX_SYMBOLS], HuffCode codes[HUFF_MAX_SYMBOLS]);
+static int huff_rebuild_tree(const HuffCode codes[HUFF_MAX_SYMBOLS], HuffNode *nodes, int *out_count);
 
 static bool read_entire_file(const char *path, uint8_t **data, size_t *size);
-static bool huff_write_header(FILE *out, uint64_t original_size, const uint64_t freq[HUFF_MAX_SYMBOLS]);
-static bool huff_read_header(FILE *in, uint64_t *original_size, uint64_t freq[HUFF_MAX_SYMBOLS]);
+static bool huff_write_header(FILE *out, uint64_t original_size, const uint8_t lengths[HUFF_MAX_SYMBOLS]);
+static bool huff_read_header(FILE *in, uint64_t *original_size, uint8_t lengths[HUFF_MAX_SYMBOLS]);
 
 static void *freq_worker(void *arg);
 static void parallel_freq_count(const uint8_t *data, size_t size, uint64_t freq[HUFF_MAX_SYMBOLS]);
@@ -362,6 +364,81 @@ static void huff_collect_codes(const HuffNode *nodes, int root, HuffCode *codes)
 	huff_collect_codes_rec(nodes, root, codes, path, 0);
 }
 
+static void huff_make_canonical(const uint8_t lengths[HUFF_MAX_SYMBOLS], HuffCode codes[HUFF_MAX_SYMBOLS]) {
+    uint64_t next_code[HUFF_MAX_CODE_BITS + 1] = {0};
+    uint64_t code = 0;
+    int bl_count[HUFF_MAX_CODE_BITS + 1] = {0};
+
+    memset(codes, 0, sizeof(HuffCode) * HUFF_MAX_SYMBOLS);
+
+    for (int i = 0; i < HUFF_MAX_SYMBOLS; i++) {
+        if (lengths[i] > 0) bl_count[lengths[i]]++;
+    }
+
+    for (int bits = 1; bits <= HUFF_MAX_CODE_BITS; bits++) {
+        code = (code + bl_count[bits - 1]) << 1;
+        next_code[bits] = code;
+    }
+
+    for (int i = 0; i < HUFF_MAX_SYMBOLS; i++) {
+        int len = lengths[i];
+        if (len > 0) {
+            codes[i].bit_count = len;
+            uint64_t c = next_code[len];
+            next_code[len]++;
+            
+            // Store bits reversed (MSB of c becomes bit 0 of code)
+            // This ensures that the canonical code (MSB-first) is written to the stream correctly
+            // because the stream writer writes bit 0 first.
+            for (int j = 0; j < len; ++j) {
+                if ((c >> (len - 1 - j)) & 1) {
+                    codes[i].bits[j >> 3] |= (1 << (j & 7));
+                }
+            }
+        }
+    }
+}
+
+static int huff_rebuild_tree(const HuffCode codes[HUFF_MAX_SYMBOLS], HuffNode *nodes, int *out_count) {
+    // Initialize root
+    nodes[0].left = -1;
+    nodes[0].right = -1;
+    nodes[0].symbol = -1;
+    int count = 1;
+
+    for (int i = 0; i < HUFF_MAX_SYMBOLS; ++i) {
+        if (codes[i].bit_count == 0) continue;
+        
+        int current = 0;
+        for (int j = 0; j < codes[i].bit_count; ++j) {
+            int bit = (codes[i].bits[j >> 3] >> (j & 7)) & 1;
+            
+            if (bit == 0) {
+                if (nodes[current].left == -1) {
+                    if (count >= HUFF_MAX_NODES) return -1;
+                    nodes[count].left = -1;
+                    nodes[count].right = -1;
+                    nodes[count].symbol = -1;
+                    nodes[current].left = count++;
+                }
+                current = nodes[current].left;
+            } else {
+                if (nodes[current].right == -1) {
+                    if (count >= HUFF_MAX_NODES) return -1;
+                    nodes[count].left = -1;
+                    nodes[count].right = -1;
+                    nodes[count].symbol = -1;
+                    nodes[current].right = count++;
+                }
+                current = nodes[current].right;
+            }
+        }
+        nodes[current].symbol = i;
+    }
+    *out_count = count;
+    return 0; // Root is always 0
+}
+
 void huffman_print_code_table(const HuffCode *codes) {
     printf("--- Huffman Code Table ---\n");
     for (int i = 0; i < HUFF_MAX_SYMBOLS; ++i) {
@@ -433,14 +510,14 @@ static bool read_entire_file(const char *path, uint8_t **data, size_t *size) {
 	return true;
 }
 
-static bool huff_write_header(FILE *out, uint64_t original_size, const uint64_t freq[HUFF_MAX_SYMBOLS]) {
+static bool huff_write_header(FILE *out, uint64_t original_size, const uint8_t lengths[HUFF_MAX_SYMBOLS]) {
 	if (fwrite(HUFF_MAGIC, 1, 4, out) != 4) return false;
 	if (fwrite(&original_size, sizeof(original_size), 1, out) != 1) return false;
-	if (fwrite(freq, sizeof(uint64_t), HUFF_MAX_SYMBOLS, out) != HUFF_MAX_SYMBOLS) return false;
+	if (fwrite(lengths, 1, HUFF_MAX_SYMBOLS, out) != HUFF_MAX_SYMBOLS) return false;
 	return true;
 }
 
-static bool huff_read_header(FILE *in, uint64_t *original_size, uint64_t freq[HUFF_MAX_SYMBOLS]) {
+static bool huff_read_header(FILE *in, uint64_t *original_size, uint8_t lengths[HUFF_MAX_SYMBOLS]) {
 	char magic[4];
 	if (fread(magic, 1, 4, in) != 4) return false;
 	if (memcmp(magic, HUFF_MAGIC, 4) != 0) {
@@ -448,7 +525,7 @@ static bool huff_read_header(FILE *in, uint64_t *original_size, uint64_t freq[HU
 		return false;
 	}
 	if (fread(original_size, sizeof(*original_size), 1, in) != 1) return false;
-	if (fread(freq, sizeof(uint64_t), HUFF_MAX_SYMBOLS, in) != HUFF_MAX_SYMBOLS) return false;
+	if (fread(lengths, 1, HUFF_MAX_SYMBOLS, in) != HUFF_MAX_SYMBOLS) return false;
 	return true;
 }
 
@@ -522,7 +599,29 @@ bool huffman_encode(const char *input_path, const char *output_path, HuffStats *
 	}
 	uint64_t freq[HUFF_MAX_SYMBOLS] = {0};
     parallel_freq_count(data, size, freq);
-	if (!huff_write_header(out, (uint64_t)size, freq)) {
+
+    HuffCode codes[HUFF_MAX_SYMBOLS];
+    uint8_t lengths[HUFF_MAX_SYMBOLS] = {0};
+
+    if (size > 0) {
+        HuffNode nodes[HUFF_MAX_NODES] = {0};
+        int node_count = 0;
+        int root = huff_build_tree(freq, nodes, &node_count);
+        if (root < 0) {
+            report_error("failed to build tree");
+            goto cleanup;
+        }
+        huff_collect_codes(nodes, root, codes);
+        
+        for (int i = 0; i < HUFF_MAX_SYMBOLS; ++i) {
+            lengths[i] = (uint8_t)codes[i].bit_count;
+        }
+        huff_make_canonical(lengths, codes);
+    } else {
+        memset(codes, 0, sizeof(codes));
+    }
+
+	if (!huff_write_header(out, (uint64_t)size, lengths)) {
 		report_errno(output_path);
 		goto cleanup;
 	}
@@ -530,15 +629,6 @@ bool huffman_encode(const char *input_path, const char *output_path, HuffStats *
 		ok = true;
 		goto cleanup;
 	}
-	HuffNode nodes[HUFF_MAX_NODES] = {0};
-	int node_count = 0;
-	int root = huff_build_tree(freq, nodes, &node_count);
-	if (root < 0) {
-		report_error("failed to build tree");
-		goto cleanup;
-	}
-    HuffCode codes[HUFF_MAX_SYMBOLS];
-    huff_collect_codes(nodes, root, codes);
     
     // Precompute fast codes (up to 64 bits)
     typedef struct {
@@ -738,27 +828,13 @@ bool huffman_decode(const char *input_path, const char *output_path, HuffStats *
 		return false;
 	}
 	uint64_t original_size = 0;
-	uint64_t freq[HUFF_MAX_SYMBOLS] = {0};
-	if (!huff_read_header(in, &original_size, freq)) {
+	uint8_t lengths[HUFF_MAX_SYMBOLS] = {0};
+	if (!huff_read_header(in, &original_size, lengths)) {
 		report_errno(input_path);
 		fclose(in);
 		return false;
 	}
-	uint64_t sum = 0;
-	int unique = 0;
-	int last_symbol = 0;
-	for (int i = 0; i < HUFF_MAX_SYMBOLS; ++i) {
-		if (freq[i] > 0) {
-			sum += freq[i];
-			unique += 1;
-			last_symbol = i;
-		}
-	}
-	if (sum != original_size) {
-		report_error("frequency sum mismatch");
-		fclose(in);
-		return false;
-	}
+
 	FILE *out = fopen(output_path, "wb");
 	if (!out) {
 		report_errno(output_path);
@@ -770,6 +846,17 @@ bool huffman_decode(const char *input_path, const char *output_path, HuffStats *
 		fclose(in);
 		return true;
 	}
+
+    // Check for single symbol case optimization
+    int unique = 0;
+    int last_symbol = 0;
+    for (int i = 0; i < HUFF_MAX_SYMBOLS; ++i) {
+        if (lengths[i] > 0) {
+            unique++;
+            last_symbol = i;
+        }
+    }
+
 	if (unique == 1) {
 		uint8_t value = (uint8_t)last_symbol;
 		const size_t block_cap = 4096;
@@ -790,9 +877,13 @@ bool huffman_decode(const char *input_path, const char *output_path, HuffStats *
 		fclose(in);
 		return true;
 	}
+
+    HuffCode codes[HUFF_MAX_SYMBOLS];
+    huff_make_canonical(lengths, codes);
+
 	HuffNode nodes[HUFF_MAX_NODES] = {0};
 	int node_count = 0;
-	int root = huff_build_tree(freq, nodes, &node_count);
+	int root = huff_rebuild_tree(codes, nodes, &node_count);
     if (root < 0) {
 		report_error("failed to rebuild tree");
 		fclose(out);
@@ -953,23 +1044,16 @@ bool huffman_show_tree(const char *input_path) {
 		return false;
 	}
 	uint64_t original_size = 0;
-	uint64_t freq[HUFF_MAX_SYMBOLS] = {0};
-	if (!huff_read_header(in, &original_size, freq)) {
+	uint8_t lengths[HUFF_MAX_SYMBOLS] = {0};
+	if (!huff_read_header(in, &original_size, lengths)) {
 		report_errno(input_path);
 		fclose(in);
 		return false;
 	}
     fclose(in);
 
-	HuffNode nodes[HUFF_MAX_NODES] = {0};
-	int node_count = 0;
-	int root = huff_build_tree(freq, nodes, &node_count);
-	if (root < 0) {
-		report_error("failed to rebuild tree");
-		return false;
-	}
     HuffCode codes[HUFF_MAX_SYMBOLS];
-    huff_collect_codes(nodes, root, codes);
+    huff_make_canonical(lengths, codes);
     
     printf("File: %s\n", input_path);
     char size_buf[32];
