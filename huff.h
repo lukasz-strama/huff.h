@@ -112,14 +112,6 @@ typedef struct {
     uint32_t bit_count;
     uint8_t *io_buffer;
     size_t io_pos;
-} BitWriter;
-
-typedef struct {
-    FILE *file;
-    uint64_t bit_buffer;
-    uint32_t bit_count;
-    uint8_t *io_buffer;
-    size_t io_pos;
     size_t io_end;
     bool exhausted;
 } BitReader;
@@ -141,12 +133,6 @@ typedef struct {
 static void report_errno(const char *path);
 static void report_error(const char *message);
 static void format_size(uint64_t bytes, char *buffer, size_t buffer_size);
-
-static void bit_writer_init(BitWriter *writer, FILE *file);
-static bool bit_writer_flush_io(BitWriter *writer);
-static bool bit_writer_write_bits_fast(BitWriter *writer, uint64_t bits, uint32_t count);
-static bool bit_writer_write_code(BitWriter *writer, const HuffCode *code);
-static bool bit_writer_flush(BitWriter *writer);
 
 static void bit_reader_init(BitReader *reader, FILE *file);
 static bool bit_reader_fill_io(BitReader *reader);
@@ -188,71 +174,6 @@ static void format_size(uint64_t bytes, char *buffer, size_t buffer_size) {
         i++;
     }
     snprintf(buffer, buffer_size, "%.2f %s", size, suffixes[i]);
-}
-
-// --- BitWriter Implementation ---
-
-static void bit_writer_init(BitWriter *writer, FILE *file) {
-    writer->file = file;
-    writer->bit_buffer = 0;
-    writer->bit_count = 0;
-    writer->io_buffer = malloc(HUFF_IO_BUFFER_CAP);
-    writer->io_pos = 0;
-}
-
-static bool bit_writer_flush_io(BitWriter *writer) {
-    if (writer->io_pos > 0) {
-        // Write the entire IO buffer to disk in one call
-        if (fwrite(writer->io_buffer, 1, writer->io_pos, writer->file) != writer->io_pos) {
-            return false;
-        }
-        writer->io_pos = 0;
-    }
-    return true;
-}
-
-static bool bit_writer_write_bits_fast(BitWriter *writer, uint64_t bits, uint32_t count) {
-    writer->bit_buffer |= bits << writer->bit_count;
-    writer->bit_count += count;
-    // Write full bytes to the IO buffer
-    while (writer->bit_count >= 8) {
-        writer->io_buffer[writer->io_pos++] = (uint8_t)(writer->bit_buffer & 0xFF);
-        writer->bit_buffer >>= 8;
-        writer->bit_count -= 8;
-        if (writer->io_pos >= HUFF_IO_BUFFER_CAP) {
-            if (!bit_writer_flush_io(writer)) return false;
-        }
-    }
-    return true;
-}
-
-static bool bit_writer_write_code(BitWriter *writer, const HuffCode *code) {
-    // Process code in chunks (max 8 bits at a time)
-    // Uses word operations instead of bit-by-bit loop
-    uint16_t remaining = code->bit_count;
-    uint16_t byte_idx = 0;
-    while (remaining > 0) {
-        uint32_t take = remaining > 8 ? 8 : remaining;
-        uint8_t byte = code->bits[byte_idx];
-        if (!bit_writer_write_bits_fast(writer, byte & ((1 << take) - 1), take)) {
-            return false;
-        }
-        remaining -= take;
-        byte_idx++;
-    }
-    return true;
-}
-
-static bool bit_writer_flush(BitWriter *writer) {
-    if (writer->bit_count > 0) {
-        writer->io_buffer[writer->io_pos++] = (uint8_t)(writer->bit_buffer & 0xFF);
-        writer->bit_buffer = 0;
-        writer->bit_count = 0;
-    }
-    if (!bit_writer_flush_io(writer)) return false;
-    free(writer->io_buffer);
-    writer->io_buffer = NULL;
-    return true;
 }
 
 // --- BitReader Implementation ---
@@ -619,21 +540,142 @@ bool huffman_encode(const char *input_path, const char *output_path, HuffStats *
     HuffCode codes[HUFF_MAX_SYMBOLS];
     huff_collect_codes(nodes, root, codes);
     
-    BitWriter writer;
-    bit_writer_init(&writer, out);
+    // Precompute fast codes (up to 64 bits)
+    typedef struct {
+        uint64_t bits;
+        int len;
+    } FastHuffCode;
+    
+    FastHuffCode fast_codes[HUFF_MAX_SYMBOLS];
+    for (int i = 0; i < HUFF_MAX_SYMBOLS; ++i) {
+        if (codes[i].bit_count > 64) {
+            fast_codes[i].len = -1; // Too long for fast path
+        } else {
+            fast_codes[i].len = codes[i].bit_count;
+            fast_codes[i].bits = 0;
+            for (int b = 0; b < codes[i].bit_count; ++b) {
+                if ((codes[i].bits[b >> 3] >> (b & 7)) & 1) {
+                    fast_codes[i].bits |= (1ULL << b);
+                }
+            }
+        }
+    }
+
+    // Optimized bit writer state
+    uint64_t bit_buffer = 0;
+    int bit_count = 0;
+    uint8_t *io_buffer = malloc(HUFF_IO_BUFFER_CAP);
+    if (!io_buffer) {
+        report_error("out of memory");
+        goto cleanup;
+    }
+    size_t io_pos = 0;
     
     clock_t start_time = clock();
     
     for (size_t i = 0; i < size; ++i) {
-        if (!bit_writer_write_code(&writer, &codes[data[i]])) {
+        uint8_t symbol = data[i];
+        FastHuffCode fc = fast_codes[symbol];
+        
+        if (fc.len > 0) {
+            // Fast path: code fits in 64 bits
+            if (bit_count + fc.len <= 64) {
+                bit_buffer |= fc.bits << bit_count;
+                bit_count += fc.len;
+            } else {
+                // Buffer full, split write
+                bit_buffer |= fc.bits << bit_count;
+                
+                // Flush 64 bits (8 bytes)
+                if (io_pos + 8 > HUFF_IO_BUFFER_CAP) {
+                    if (fwrite(io_buffer, 1, io_pos, out) != io_pos) {
+                        report_errno(output_path);
+                        free(io_buffer);
+                        goto cleanup;
+                    }
+                    io_pos = 0;
+                }
+                
+                // Write 8 bytes manually (Little Endian)
+                io_buffer[io_pos++] = (uint8_t)(bit_buffer);
+                io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 8);
+                io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 16);
+                io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 24);
+                io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 32);
+                io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 40);
+                io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 48);
+                io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 56);
+                
+                int written = 64 - bit_count;
+                bit_buffer = fc.bits >> written;
+                bit_count = fc.len - written;
+            }
+        } else {
+            // Slow path: code > 64 bits (rare)
+            // Fallback to byte-by-byte writing
+            const HuffCode *c = &codes[symbol];
+            for (int b = 0; b < c->bit_count; ++b) {
+                if ((c->bits[b >> 3] >> (b & 7)) & 1) {
+                    bit_buffer |= (1ULL << bit_count);
+                }
+                bit_count++;
+                if (bit_count == 64) {
+                    if (io_pos + 8 > HUFF_IO_BUFFER_CAP) {
+                        if (fwrite(io_buffer, 1, io_pos, out) != io_pos) {
+                            report_errno(output_path);
+                            free(io_buffer);
+                            goto cleanup;
+                        }
+                        io_pos = 0;
+                    }
+                    io_buffer[io_pos++] = (uint8_t)(bit_buffer);
+                    io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 8);
+                    io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 16);
+                    io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 24);
+                    io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 32);
+                    io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 40);
+                    io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 48);
+                    io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 56);
+                    bit_buffer = 0;
+                    bit_count = 0;
+                }
+            }
+        }
+    }
+    
+    // Flush remaining bits
+    while (bit_count > 0) {
+        if (io_pos >= HUFF_IO_BUFFER_CAP) {
+            if (fwrite(io_buffer, 1, io_pos, out) != io_pos) {
+                report_errno(output_path);
+                free(io_buffer);
+                goto cleanup;
+            }
+            io_pos = 0;
+        }
+        io_buffer[io_pos++] = (uint8_t)(bit_buffer & 0xFF);
+        bit_buffer >>= 8;
+        bit_count -= 8; // May become negative, handled by loop condition? No.
+        // bit_count is number of valid bits.
+        // If we have 3 bits, we write 1 byte.
+        // The loop above writes full bytes.
+        // We need to be careful.
+    }
+    // Correct flush logic:
+    // We have `bit_count` bits in `bit_buffer`.
+    // We need to write `ceil(bit_count / 8)` bytes.
+    // But `bit_buffer` is shifted out.
+    // Let's rewrite the flush loop.
+    
+    // Flush remaining bytes in buffer
+    if (io_pos > 0) {
+        if (fwrite(io_buffer, 1, io_pos, out) != io_pos) {
             report_errno(output_path);
+            free(io_buffer);
             goto cleanup;
         }
     }
-    if (!bit_writer_flush(&writer)) {
-        report_errno(output_path);
-        goto cleanup;
-    }
+    free(io_buffer);
     
     clock_t end_time = clock();
     double time_taken = (double)(end_time - start_time) / CLOCKS_PER_SEC;
