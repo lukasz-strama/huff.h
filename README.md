@@ -4,11 +4,11 @@ A fast and simple Huffman Encoder/Decoder single-header library for C/C++.
 
 ## Features
 
-*   **Single-Header**: Easy integration. Just drop `huff.h` into your project.
+*   **Monolithic single-header**: Easy to integrate into any C/C++ project.
 *   **Simple API**: High-level functions for file compression and decompression.
 *   **Multi-threaded**: Uses `pthread` for parallel frequency counting on large files.
 *   **Statistics**: Calculates Shannon entropy, average code length, and coding efficiency.
-*   **Portable**: Written in C99. Depends only on standard library and pthreads.
+*   **Portable (POSIX)**: Written in C99. Depends only on the standard library and pthreads (not available on Windows by default).
 
 ## Usage
 
@@ -36,21 +36,25 @@ int main(void) {
 
 ## API Reference
 Compresses the input file using Huffman coding.
-
-    bool huffman_encode(const char *input_path, const char *output_path, HuffStats *stats)
+```c
+bool huffman_encode(const char *input_path, const char *output_path, HuffStats *stats)
+```
 *   `stats`: Optional pointer to `HuffStats` to retrieve compression metrics (entropy, time, etc.).
 
 Decompresses a Huffman-encoded file.
-
-    bool huffman_decode(const char *input_path, const char *output_path, HuffStats *stats)
+```c
+bool huffman_decode(const char *input_path, const char *output_path, HuffStats *stats)
+```
 
 Reconstructs and displays the Huffman tree and code table from a compressed file.
-
-    bool huffman_show_tree(const char *input_path)
+```c
+bool huffman_show_tree(const char *input_path)
+```
 
 Helper to print the generated Huffman codes to stdout.
-
+```c
     void huffman_print_code_table(const HuffCode *codes)
+```
 
 ## Building
 
