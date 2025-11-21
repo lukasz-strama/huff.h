@@ -15,6 +15,11 @@ A fast and simple Huffman Encoder/Decoder single-header library for C/C++.
 *   **Statistics**: Calculates Shannon entropy, average code length, and coding efficiency.
 *   **Portable (POSIX)**: Written in C99. Depends only on the standard library and pthreads (not available on Windows by default).
 
+## Limitations
+
+*   **Memory Usage (Encoder)**: The encoder currently reads the *entire input file into memory* to perform parallel frequency counting and fast encoding. This limits the maximum file size to available RAM. The decoder, however, uses buffered I/O and has a low memory footprint.
+*   **Static Huffman**: This is a two-pass static Huffman implementation. It requires the entire dataset to be available to calculate frequencies before encoding begins, making it unsuitable for real-time streams.
+
 ## Benchmarks
 
 Tests were performed on the [Silesia Compression Corpus](https://sun.aei.polsl.pl/~sdeor/index.php?page=silesia).
@@ -54,11 +59,6 @@ Results from [Michael Dipperstein's ANSI C implementation](https://github.com/Mi
 | webster | 41.46 MB | 25.93 MB | 1.60x | 41.75 MB/s | 44.30 MB/s |
 | x-ray | 8.47 MB | 7.02 MB | 1.21x | 51.96 MB/s | 46.53 MB/s |
 | xml | 5.35 MB | 3.71 MB | 1.44x | 41.45 MB/s | 43.55 MB/s |
-
-## Limitations
-
-*   **Memory Usage (Encoder)**: The encoder currently reads the entire input file into memory to perform parallel frequency counting and fast encoding. This limits the maximum file size to available RAM. The decoder, however, uses buffered I/O and has a low memory footprint.
-*   **Static Huffman**: This is a two-pass static Huffman implementation. It requires the entire dataset to be available to calculate frequencies before encoding begins, making it unsuitable for real-time streams.
 
 ## Usage
 
@@ -118,6 +118,13 @@ cc -o nob nob.c
 ```
 
 This will compile the example application to `build/huff`.
+
+## Who is this for?
+
+This library is designed as a **high-performance foundation** for other projects. It is ideal for:
+*   **Custom Compression Experiments**: Like building your own compression algorithms (e.g., BWT + Huffman, LZ77 + Huffman) who need a fast, reliable entropy coding backend without writing it from scratch.
+*   **Quick Integration**: Projects that need standard Huffman coding immediately with zero dependencies and minimal integration effort.
+*   **Educational Value**: A clean, modern reference for how to implement Huffman coding in C, demonstrating advanced optimizations like Canonical codes and LUT decoding.
 
 ## License
 
