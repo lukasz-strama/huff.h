@@ -2,14 +2,16 @@
 
 A fast and simple Huffman Encoder/Decoder single-header library for C/C++.
 
+**This library is designed to be one of the fastest pure Huffman implementations available, pushing the algorithm to its theoretical performance limits on modern hardware.**
+
 ## Features
 
 *   **Monolithic single-header**: Easy to integrate into any C/C++ project.
 *   **High Performance**: Optimized with 12-bit Lookup Tables (LUT) for fast decoding and 64-bit buffer fast-paths for encoding.
+*   **Multi-threaded Frequency Counting**: Uses `pthread` to parallelize the initial file scan, significantly speeding up the compression of large files.
+*   **Optimized Single-Threaded Core**: The encoding and decoding loops are highly optimized single-threaded implementations that saturate memory bandwidth.
 *   **Canonical Huffman**: Uses Canonical Huffman codes to minimize header size (256 bytes for code lengths) and ensure optimal compression for small files.
 *   **Efficient I/O**: Uses internal buffering (4KB) to minimize system calls during file operations.
-*   **Simple API**: High-level functions for file compression and decompression.
-*   **Multi-threaded**: Uses `pthread` for parallel frequency counting on large files.
 *   **Statistics**: Calculates Shannon entropy, average code length, and coding efficiency.
 *   **Portable (POSIX)**: Written in C99. Depends only on the standard library and pthreads (not available on Windows by default).
 
