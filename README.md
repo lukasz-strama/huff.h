@@ -4,13 +4,15 @@ A fast and simple Huffman Encoder/Decoder single-header library for C/C++.
 
 ## Features
 
+*   **Single-Header**: Easy integration. Just drop `huff.h` into your project.
+*   **Simple API**: High-level functions for file compression and decompression.
 *   **Multi-threaded**: Uses `pthread` for parallel frequency counting on large files.
 *   **Statistics**: Calculates Shannon entropy, average code length, and coding efficiency.
 *   **Portable**: Written in C99. Depends only on standard library and pthreads.
 
 ## Usage
 
-1.  Copy `src/huff.h` to your project.
+1.  Copy `huff.h` to your project.
 2.  Define `HUFF_IMPLEMENTATION` in **one** source file before including the header to create the implementation.
 
 ```c
@@ -46,6 +48,19 @@ Reconstructs and displays the Huffman tree and code table from a compressed file
 
 ### `void huffman_print_code_table(const HuffCode *codes)`
 Helper to print the generated Huffman codes to stdout.
+
+## Building
+
+This project uses [nob.h](https://github.com/tsoding/nob.h), a minimal build system by [Tsoding](https://github.com/tsoding) (Alexey Kutepov).
+
+To build the project:
+
+```bash
+cc -o nob nob.c
+./nob
+```
+
+This will compile the example application to `build/huff`.
 
 ## License
 
