@@ -582,6 +582,26 @@ bool huffman_encode(const char *input_path, const char *output_path, HuffStats *
             if (bit_count + fc.len <= 64) {
                 bit_buffer |= fc.bits << bit_count;
                 bit_count += fc.len;
+                if (bit_count == 64) {
+                    if (io_pos + 8 > HUFF_IO_BUFFER_CAP) {
+                        if (fwrite(io_buffer, 1, io_pos, out) != io_pos) {
+                            report_errno(output_path);
+                            free(io_buffer);
+                            goto cleanup;
+                        }
+                        io_pos = 0;
+                    }
+                    io_buffer[io_pos++] = (uint8_t)(bit_buffer);
+                    io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 8);
+                    io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 16);
+                    io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 24);
+                    io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 32);
+                    io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 40);
+                    io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 48);
+                    io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 56);
+                    bit_buffer = 0;
+                    bit_count = 0;
+                }
             } else {
                 // Buffer full, split write
                 bit_buffer |= fc.bits << bit_count;
