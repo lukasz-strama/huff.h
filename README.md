@@ -19,18 +19,18 @@ Tests were performed on the [Silesia Compression Corpus](https://sun.aei.polsl.p
 
 | File | Original Size | Compressed Size | Ratio | Comp Speed | Decomp Speed |
 |------|---------------|-----------------|-------|------------|--------------|
-| dickens | 10.19 MB | 5.83 MB | 1.75x | 441.17 MB/s | 210.09 MB/s |
-| mozilla | 51.22 MB | 39.98 MB | 1.28x | 389.59 MB/s | 215.77 MB/s |
-| mr | 9.97 MB | 4.62 MB | 2.16x | 490.54 MB/s | 255.48 MB/s |
-| nci | 33.55 MB | 10.22 MB | 3.28x | 573.33 MB/s | 246.26 MB/s |
-| ooffice | 6.15 MB | 5.12 MB | 1.20x | 334.27 MB/s | 201.86 MB/s |
-| osdb | 10.09 MB | 8.34 MB | 1.21x | 372.22 MB/s | 214.99 MB/s |
-| reymont | 6.63 MB | 4.03 MB | 1.64x | 398.40 MB/s | 203.69 MB/s |
-| samba | 21.61 MB | 16.55 MB | 1.31x | 387.93 MB/s | 209.72 MB/s |
-| sao | 7.25 MB | 6.84 MB | 1.06x | 345.44 MB/s | 214.75 MB/s |
-| webster | 41.46 MB | 25.93 MB | 1.60x | 406.30 MB/s | 196.73 MB/s |
-| x-ray | 8.47 MB | 7.02 MB | 1.21x | 374.71 MB/s | 233.14 MB/s |
-| xml | 5.35 MB | 3.71 MB | 1.44x | 375.63 MB/s | 213.25 MB/s |
+| dickens | 10.19 MB | 5.83 MB | 1.75x | 452.38 MB/s | 218.58 MB/s |
+| mozilla | 51.22 MB | 39.98 MB | 1.28x | 392.73 MB/s | 220.87 MB/s |
+| mr | 9.97 MB | 4.62 MB | 2.16x | 488.52 MB/s | 258.52 MB/s |
+| nci | 33.55 MB | 10.22 MB | 3.28x | 590.63 MB/s | 255.93 MB/s |
+| ooffice | 6.15 MB | 5.12 MB | 1.20x | 334.36 MB/s | 201.92 MB/s |
+| osdb | 10.09 MB | 8.34 MB | 1.21x | 383.25 MB/s | 211.75 MB/s |
+| reymont | 6.63 MB | 4.03 MB | 1.64x | 376.28 MB/s | 202.27 MB/s |
+| samba | 21.61 MB | 16.55 MB | 1.31x | 401.33 MB/s | 211.00 MB/s |
+| sao | 7.25 MB | 6.84 MB | 1.06x | 370.94 MB/s | 206.30 MB/s |
+| webster | 41.46 MB | 25.93 MB | 1.60x | 387.96 MB/s | 204.40 MB/s |
+| x-ray | 8.47 MB | 7.02 MB | 1.21x | 362.74 MB/s | 246.82 MB/s |
+| xml | 5.35 MB | 3.71 MB | 1.44x | 369.90 MB/s | 222.18 MB/s |
 
 *System: Linux (Fedora), Single-threaded decoding, Multi-threaded frequency counting.*
 
