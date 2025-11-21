@@ -88,6 +88,8 @@ void huffman_print_code_table(const HuffCode *codes);
 #define HUFF_MAGIC "HUF1"
 #define HUFF_MAX_NODES (HUFF_MAX_SYMBOLS * 2)
 #define HUFF_IO_BUFFER_CAP (64 * 1024)
+#define HUFF_DEC_TABLE_BITS 8
+#define HUFF_DEC_TABLE_SIZE (1 << HUFF_DEC_TABLE_BITS)
 
 // --- Internal Structures ---
 
@@ -97,6 +99,12 @@ typedef struct {
     int32_t right;
     int32_t symbol;
 } HuffNode;
+
+typedef struct {
+    int16_t symbol;    // 0-255 if leaf, -1 if not
+    uint8_t bits;      // Number of bits to consume
+    int16_t next_node; // Next node index if not leaf
+} HuffDecEntry;
 
 typedef struct {
     FILE *file;
@@ -265,6 +273,19 @@ static bool bit_reader_fill_io(BitReader *reader) {
     size_t n = fread(reader->io_buffer, 1, HUFF_IO_BUFFER_CAP, reader->file);
     reader->io_end = n;
     return n > 0;
+}
+
+static void bit_reader_ensure(BitReader *reader, uint32_t n) {
+    while (reader->bit_count < n) {
+        if (reader->io_pos >= reader->io_end) {
+            if (!bit_reader_fill_io(reader)) {
+                reader->exhausted = true;
+                break;
+            }
+        }
+        reader->bit_buffer |= (uint64_t)reader->io_buffer[reader->io_pos++] << reader->bit_count;
+        reader->bit_count += 8;
+    }
 }
 
 static bool bit_reader_read_bit(BitReader *reader, uint8_t *bit) {
@@ -728,12 +749,39 @@ bool huffman_decode(const char *input_path, const char *output_path, HuffStats *
 	HuffNode nodes[HUFF_MAX_NODES] = {0};
 	int node_count = 0;
 	int root = huff_build_tree(freq, nodes, &node_count);
-	if (root < 0) {
+    if (root < 0) {
 		report_error("failed to rebuild tree");
 		fclose(out);
 		fclose(in);
 		return false;
 	}
+
+    // Build lookup table for faster decoding
+    HuffDecEntry table[HUFF_DEC_TABLE_SIZE];
+    for (int i = 0; i < HUFF_DEC_TABLE_SIZE; ++i) {
+        int node = root;
+        int bits = 0;
+        // Simulate walking the tree with bits of i (LSB first)
+        for (int b = 0; b < HUFF_DEC_TABLE_BITS; ++b) {
+            int bit = (i >> b) & 1;
+            node = bit ? nodes[node].right : nodes[node].left;
+            bits++;
+            if (node < 0) break; // Should not happen if tree is valid
+            if (nodes[node].left < 0 && nodes[node].right < 0) {
+                // Leaf found
+                table[i].symbol = (int16_t)nodes[node].symbol;
+                table[i].bits = (uint8_t)bits;
+                table[i].next_node = -1;
+                goto next_entry;
+            }
+        }
+        // Not a leaf after HUFF_DEC_TABLE_BITS
+        table[i].symbol = -1;
+        table[i].bits = HUFF_DEC_TABLE_BITS;
+        table[i].next_node = (int16_t)node;
+next_entry:;
+    }
+
     BitReader reader;
     bit_reader_init(&reader, in);
     uint64_t produced = 0;
@@ -741,34 +789,55 @@ bool huffman_decode(const char *input_path, const char *output_path, HuffStats *
     clock_t start_time = clock();
     
     while (produced < original_size) {
-        int node_index = root;
-        // TODO: Add lookup table for faster decoding in the future
-        // Currently: buffered reader + bit-by-bit tree walking
-        while (nodes[node_index].left >= 0 || nodes[node_index].right >= 0) {
-            uint8_t bit = 0;
-            if (!bit_reader_read_bit(&reader, &bit)) {
-                report_error("unexpected end of stream");
-                fclose(out);
-                fclose(in);
-                bit_reader_free(&reader);
-                return false;
+        bit_reader_ensure(&reader, HUFF_DEC_TABLE_BITS);
+        
+        // Peek bits
+        uint8_t peek = (uint8_t)(reader.bit_buffer & (HUFF_DEC_TABLE_SIZE - 1));
+        HuffDecEntry *entry = &table[peek];
+        
+        if (entry->symbol >= 0) {
+            // Fast path: symbol found in table
+            if (reader.bit_count < entry->bits) {
+                // Not enough bits? This can happen at EOF if file is truncated
+                // or if we are at the very end and have < 8 bits but enough for the symbol.
+                // If we have enough bits for THIS symbol, we are good.
+                if (reader.bit_count < entry->bits) {
+                     report_error("unexpected end of stream");
+                     goto decode_error;
+                }
             }
-            node_index = bit ? nodes[node_index].right : nodes[node_index].left;
-            if (node_index < 0) {
-                report_error("corrupted bitstream");
-                fclose(out);
-                fclose(in);
-                bit_reader_free(&reader);
-                return false;
+            if (fputc((uint8_t)entry->symbol, out) == EOF) {
+                report_errno(output_path);
+                goto decode_error;
             }
-        }
-        unsigned char byte = (unsigned char)nodes[node_index].symbol;
-        if (fputc(byte, out) == EOF) {
-            report_errno(output_path);
-            fclose(out);
-            fclose(in);
-            bit_reader_free(&reader);
-            return false;
+            reader.bit_buffer >>= entry->bits;
+            reader.bit_count -= entry->bits;
+        } else {
+            // Slow path: consume table bits and continue walking
+            if (reader.bit_count < HUFF_DEC_TABLE_BITS) {
+                 report_error("unexpected end of stream");
+                 goto decode_error;
+            }
+            reader.bit_buffer >>= HUFF_DEC_TABLE_BITS;
+            reader.bit_count -= HUFF_DEC_TABLE_BITS;
+            
+            int node_index = entry->next_node;
+            while (nodes[node_index].left >= 0 || nodes[node_index].right >= 0) {
+                uint8_t bit = 0;
+                if (!bit_reader_read_bit(&reader, &bit)) {
+                    report_error("unexpected end of stream");
+                    goto decode_error;
+                }
+                node_index = bit ? nodes[node_index].right : nodes[node_index].left;
+                if (node_index < 0) {
+                    report_error("corrupted bitstream");
+                    goto decode_error;
+                }
+            }
+            if (fputc((uint8_t)nodes[node_index].symbol, out) == EOF) {
+                report_errno(output_path);
+                goto decode_error;
+            }
         }
         produced += 1;
     }
@@ -785,6 +854,12 @@ bool huffman_decode(const char *input_path, const char *output_path, HuffStats *
     fclose(out);
     fclose(in);
     return true;
+
+decode_error:
+    bit_reader_free(&reader);
+    fclose(out);
+    fclose(in);
+    return false;
 }
 
 bool huffman_show_tree(const char *input_path) {
