@@ -55,6 +55,11 @@ Results from [Michael Dipperstein's ANSI C implementation](https://github.com/Mi
 | x-ray | 8.47 MB | 7.02 MB | 1.21x | 51.96 MB/s | 46.53 MB/s |
 | xml | 5.35 MB | 3.71 MB | 1.44x | 41.45 MB/s | 43.55 MB/s |
 
+## Limitations
+
+*   **Memory Usage (Encoder)**: The encoder currently reads the entire input file into memory to perform parallel frequency counting and fast encoding. This limits the maximum file size to available RAM. The decoder, however, uses buffered I/O and has a low memory footprint.
+*   **Static Huffman**: This is a two-pass static Huffman implementation. It requires the entire dataset to be available to calculate frequencies before encoding begins, making it unsuitable for real-time streams.
+
 ## Usage
 
 1.  Copy `huff.h` to your project.
