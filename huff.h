@@ -571,7 +571,8 @@ bool huffman_encode(const char *input_path, const char *output_path, HuffStats *
     }
     size_t io_pos = 0;
     
-    clock_t start_time = clock();
+    struct timespec start, end;
+    clock_gettime(CLOCK_MONOTONIC, &start);
     
     for (size_t i = 0; i < size; ++i) {
         uint8_t symbol = data[i];
@@ -697,8 +698,8 @@ bool huffman_encode(const char *input_path, const char *output_path, HuffStats *
     }
     free(io_buffer);
     
-    clock_t end_time = clock();
-    double time_taken = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    double time_taken = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
     
     long out_size = ftell(out);
 
@@ -839,7 +840,8 @@ next_entry:;
     bit_reader_init(&reader, in);
     uint64_t produced = 0;
     
-    clock_t start_time = clock();
+    struct timespec start, end;
+    clock_gettime(CLOCK_MONOTONIC, &start);
     
     while (produced < original_size) {
         bit_reader_ensure(&reader, HUFF_DEC_TABLE_BITS);
@@ -922,8 +924,8 @@ next_entry:;
         }
     }
     
-    clock_t end_time = clock();
-    double time_taken = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    double time_taken = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
     
     if (stats) {
         stats->original_size = produced;

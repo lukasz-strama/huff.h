@@ -8,10 +8,14 @@
 #define HUFF_IMPLEMENTATION
 #include "huff.h"
 
-int main(void) {
-    const char *input_file = "tests/text_skewed.txt";
-    const char *compressed_file = "tests/text_skewed.huff";
-    const char *decompressed_file = "tests/text_skewed_decoded.txt";
+int main(int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <input_file> [compressed_file] [decompressed_file]\n", argv[0]);
+        return 1;
+    }
+    const char *input_file = argv[1];
+    const char *compressed_file = (argc >= 3) ? argv[2] : "test.huff";
+    const char *decompressed_file = (argc >= 4) ? argv[3] : "test_decoded.bin";
 
     // 1. Check if input file exists
     FILE *f = fopen(input_file, "rb");
@@ -31,7 +35,7 @@ int main(void) {
 
     printf("  Original Size:   %lu bytes\n", stats.original_size);
     printf("  Compressed Size: %lu bytes\n", stats.compressed_size);
-    printf("  Time Taken:      %.4f seconds\n", stats.time_taken);
+    printf("  Time Taken:      %.6f seconds\n", stats.time_taken);
     printf("  Entropy:         %.4f bits/symbol\n", stats.entropy);
     
     // Show the code table used
@@ -48,7 +52,7 @@ int main(void) {
     }
 
     printf("  Decoded Size:    %lu bytes\n", stats.original_size);
-    printf("  Time Taken:      %.4f seconds\n", stats.time_taken);
+    printf("  Time Taken:      %.6f seconds\n", stats.time_taken);
 
     printf("\n[SUCCESS] Test completed successfully!\n");
     return 0;

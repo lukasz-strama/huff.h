@@ -26,9 +26,15 @@ def create_skewed(filename, size):
         weights.append(w)
         w //= 2
     
+    chunk_size = 1024 * 1024 # 1MB chunks
     with open(filename, 'w') as f:
-        for _ in range(size):
-            f.write(random.choices(chars, weights=weights, k=1)[0])
+        remaining = size
+        while remaining > 0:
+            current_chunk = min(remaining, chunk_size)
+            # Generate a chunk of characters
+            data = random.choices(chars, weights=weights, k=current_chunk)
+            f.write("".join(data))
+            remaining -= current_chunk
 
 def create_fibonacci(filename):
     # Frequencies following Fibonacci sequence
@@ -40,6 +46,7 @@ def create_fibonacci(filename):
 
 if __name__ == "__main__":
     print("Generating test files in tests/...")
+    os.makedirs("tests", exist_ok=True)
     create_lorem("tests/text_lorem.txt")
     create_random("tests/binary_random_1mb.bin", 1024 * 1024) # 1MB
     create_pattern("tests/binary_pattern.bin", 1024 * 1024)   # 1MB
