@@ -7,6 +7,18 @@
 #define TEST_DIR "tests"
 #define OUTPUT_DIR "tests/outputs"
 
+// Format file size to human-readable string (B, KB, MB...)
+void format_size(uint64_t bytes, char* buffer, size_t buffer_size) {
+  const char* suffixes[] = {"B", "KB", "MB", "GB", "TB"};
+  int i = 0;
+  double size = (double)bytes;
+  while (size >= 1024 && i < 4) {
+    size /= 1024;
+    i++;
+  }
+  snprintf(buffer, buffer_size, "%.2f %s", size, suffixes[i]);
+}
+
 // Helper to check if a file is a regular file and not a hidden file or script
 bool is_test_file(const char* name) {
   if (name[0] == '.') return false;
@@ -68,7 +80,7 @@ void run_test(const char* filename) {
   HuffStats stats = {0};
 
   // Compress
-  if (!huffman_encode(input_path, compressed_path, &stats)) {
+  if (huffman_encode(input_path, compressed_path, &stats) != HUFF_SUCCESS) {
     printf("  [FAIL] Compression failed\n");
     return;
   }
@@ -80,7 +92,8 @@ void run_test(const char* filename) {
 
   // Decompress
   memset(&stats, 0, sizeof(stats));
-  if (!huffman_decode(compressed_path, decompressed_path, &stats)) {
+  if (huffman_decode(compressed_path, decompressed_path, &stats) !=
+      HUFF_SUCCESS) {
     printf("  [FAIL] Decompression failed\n");
     return;
   }

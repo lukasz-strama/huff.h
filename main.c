@@ -7,6 +7,25 @@
 #define HUFF_IMPLEMENTATION
 #include "huff.h"
 
+void print_code_table(const HuffCode* codes) {
+  printf("--- Huffman Code Table ---\n");
+  for (int i = 0; i < HUFF_MAX_SYMBOLS; ++i) {
+    if (codes[i].bit_count > 0) {
+      printf("Symbol 0x%02X: ", i);
+      if (i >= 32 && i <= 126)
+        printf("'%c' ", (char)i);
+      else
+        printf("    ");
+
+      for (int j = 0; j < codes[i].bit_count; ++j) {
+        printf("%d", (codes[i].bits[j >> 3] >> (j & 7)) & 1);
+      }
+      printf(" (%d bits)\n", codes[i].bit_count);
+    }
+  }
+  printf("--------------------------\n");
+}
+
 int main(int argc, char** argv) {
   if (argc < 2) {
     fprintf(stderr,
@@ -29,8 +48,9 @@ int main(int argc, char** argv) {
   // 2. Compress the file
   printf("[INFO] Compressing: %s -> %s\n", input_file, compressed_file);
   HuffStats stats = {0};
-  if (!huffman_encode(input_file, compressed_file, &stats)) {
-    fprintf(stderr, "[ERROR] Compression failed\n");
+  HuffResult res = huffman_encode(input_file, compressed_file, &stats);
+  if (res != HUFF_SUCCESS) {
+    fprintf(stderr, "[ERROR] Compression failed with error code: %d\n", res);
     return 1;
   }
 
@@ -41,15 +61,16 @@ int main(int argc, char** argv) {
 
   // Show the code table used
   printf("\n");
-  huffman_print_code_table(stats.codes);
+  print_code_table(stats.codes);
 
   // 3. Decompress the file
   printf("\n[INFO] Decompressing: %s -> %s\n", compressed_file,
          decompressed_file);
   // Reset stats for decoding
   memset(&stats, 0, sizeof(stats));
-  if (!huffman_decode(compressed_file, decompressed_file, &stats)) {
-    fprintf(stderr, "[ERROR] Decompression failed\n");
+  res = huffman_decode(compressed_file, decompressed_file, &stats);
+  if (res != HUFF_SUCCESS) {
+    fprintf(stderr, "[ERROR] Decompression failed with error code: %d\n", res);
     return 1;
   }
 
