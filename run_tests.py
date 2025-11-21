@@ -19,18 +19,22 @@ def run_test(input_file):
         print(result.stderr)
         return False
 
-    # Extract times
+    # Extract stats
+    stats = {}
     times = []
     for line in result.stdout.splitlines():
-        if "Time Taken:" in line:
-            times.append(line.split(":")[1].strip())
+        line = line.strip()
+        if line.startswith("Original Size:"):
+            stats['orig_size'] = int(line.split(":")[1].strip().split()[0])
+        elif line.startswith("Compressed Size:"):
+            stats['comp_size'] = int(line.split(":")[1].strip().split()[0])
+        elif line.startswith("Entropy:"):
+            stats['entropy'] = float(line.split(":")[1].strip().split()[0])
+        elif line.startswith("Time Taken:"):
+            # First occurrence is compression, second is decompression
+            val = line.split(":")[1].strip().split()[0]
+            times.append(float(val))
     
-    time_str = ""
-    if len(times) >= 2:
-        time_str = f" (Comp: {times[0]}, Decomp: {times[1]})"
-    elif len(times) == 1:
-        time_str = f" (Time: {times[0]})"
-        
     # Verify output matches input
     try:
         with open(input_file, 'rb') as f1, open(decompressed_file, 'rb') as f2:
@@ -47,7 +51,29 @@ def run_test(input_file):
     # if os.path.exists(decompressed_file):
     #     os.remove(decompressed_file)
         
-    print(f"  [PASS] {input_file}{time_str}")
+    print(f"  [PASS] {input_file}")
+    if 'orig_size' in stats:
+        print(f"    Original Size:   {stats['orig_size']:,} bytes")
+    if 'comp_size' in stats:
+        print(f"    Compressed Size: {stats['comp_size']:,} bytes")
+    if 'entropy' in stats:
+        print(f"    Entropy:         {stats['entropy']:.4f} bits/symbol")
+    
+    if stats.get('comp_size', 0) > 0 and stats.get('orig_size', 0) > 0:
+        ratio = stats['orig_size'] / stats['comp_size']
+        saving = (1.0 - stats['comp_size'] / stats['orig_size']) * 100.0
+        print(f"    Compression Rate: {ratio:.2f}x ({saving:.2f}%)")
+    
+    if len(times) >= 1 and times[0] > 0 and stats.get('orig_size', 0) > 0:
+        mb = stats['orig_size'] / (1024 * 1024)
+        speed = mb / times[0]
+        print(f"    Comp Speed:      {speed:.2f} MB/s ({times[0]:.6f} s)")
+        
+    if len(times) >= 2 and times[1] > 0 and stats.get('orig_size', 0) > 0:
+        mb = stats['orig_size'] / (1024 * 1024)
+        speed = mb / times[1]
+        print(f"    Decomp Speed:    {speed:.2f} MB/s ({times[1]:.6f} s)")
+    
     return True
 
 def main():

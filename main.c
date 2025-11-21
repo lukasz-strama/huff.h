@@ -1,7 +1,6 @@
 /* huff - Simple Example Usage
  *
  * This file demonstrates how to use the huff library.
- * It creates a test file, compresses it, and then decompresses it.
  *
  */
 
