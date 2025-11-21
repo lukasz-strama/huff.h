@@ -5,8 +5,8 @@ import glob
 
 def run_test(input_file):
     basename = os.path.basename(input_file)
-    compressed_file = os.path.join("tests/outputs", basename + ".huff")
-    decompressed_file = os.path.join("tests/outputs", basename + ".decoded")
+    compressed_file = os.path.join("tests/outputs", basename + ".huf")
+    decompressed_file = os.path.join("tests/outputs", basename)
     
     print(f"Testing {input_file}...")
     
@@ -80,8 +80,8 @@ def main():
     os.makedirs("tests/outputs", exist_ok=True)
     
     test_files = glob.glob("tests/*")
-    # Filter out python scripts, directories, and existing .huff/.decoded files
-    test_files = [f for f in test_files if os.path.isfile(f) and not f.endswith(".py") and not f.endswith(".huff") and not f.endswith(".decoded")]
+    # Filter out python scripts, directories, and existing .huf files
+    test_files = [f for f in test_files if os.path.isfile(f) and not f.endswith(".py") and not f.endswith(".huf")]
     
     passed = 0
     total = 0

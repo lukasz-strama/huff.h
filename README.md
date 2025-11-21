@@ -13,6 +13,27 @@ A fast and simple Huffman Encoder/Decoder single-header library for C/C++.
 *   **Statistics**: Calculates Shannon entropy, average code length, and coding efficiency.
 *   **Portable (POSIX)**: Written in C99. Depends only on the standard library and pthreads (not available on Windows by default).
 
+## Benchmarks
+
+Tests were performed on the [Silesia Compression Corpus](https://sun.aei.polsl.pl/~sdeor/index.php?page=silesia).
+
+| File | Original Size | Compressed Size | Ratio | Comp Speed | Decomp Speed |
+|------|---------------|-----------------|-------|------------|--------------|
+| dickens | 10.19 MB | 5.83 MB | 1.75x | 441.17 MB/s | 210.09 MB/s |
+| mozilla | 51.22 MB | 39.98 MB | 1.28x | 389.59 MB/s | 215.77 MB/s |
+| mr | 9.97 MB | 4.62 MB | 2.16x | 490.54 MB/s | 255.48 MB/s |
+| nci | 33.55 MB | 10.22 MB | 3.28x | 573.33 MB/s | 246.26 MB/s |
+| ooffice | 6.15 MB | 5.12 MB | 1.20x | 334.27 MB/s | 201.86 MB/s |
+| osdb | 10.09 MB | 8.34 MB | 1.21x | 372.22 MB/s | 214.99 MB/s |
+| reymont | 6.63 MB | 4.03 MB | 1.64x | 398.40 MB/s | 203.69 MB/s |
+| samba | 21.61 MB | 16.55 MB | 1.31x | 387.93 MB/s | 209.72 MB/s |
+| sao | 7.25 MB | 6.84 MB | 1.06x | 345.44 MB/s | 214.75 MB/s |
+| webster | 41.46 MB | 25.93 MB | 1.60x | 406.30 MB/s | 196.73 MB/s |
+| x-ray | 8.47 MB | 7.02 MB | 1.21x | 374.71 MB/s | 233.14 MB/s |
+| xml | 5.35 MB | 3.71 MB | 1.44x | 375.63 MB/s | 213.25 MB/s |
+
+*System: Linux (Fedora), Single-threaded decoding, Multi-threaded frequency counting.*
+
 ## Usage
 
 1.  Copy `huff.h` to your project.
