@@ -35,19 +35,22 @@ int main(void) {
 ```
 
 ## API Reference
-
-### `bool huffman_encode(const char *input_path, const char *output_path, HuffStats *stats)`
 Compresses the input file using Huffman coding.
+
+    bool huffman_encode(const char *input_path, const char *output_path, HuffStats *stats)
 *   `stats`: Optional pointer to `HuffStats` to retrieve compression metrics (entropy, time, etc.).
 
-### `bool huffman_decode(const char *input_path, const char *output_path, HuffStats *stats)`
 Decompresses a Huffman-encoded file.
 
-### `bool huffman_show_tree(const char *input_path)`
+    bool huffman_decode(const char *input_path, const char *output_path, HuffStats *stats)
+
 Reconstructs and displays the Huffman tree and code table from a compressed file.
 
-### `void huffman_print_code_table(const HuffCode *codes)`
+    bool huffman_show_tree(const char *input_path)
+
 Helper to print the generated Huffman codes to stdout.
+
+    void huffman_print_code_table(const HuffCode *codes)
 
 ## Building
 
