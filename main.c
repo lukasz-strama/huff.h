@@ -3,27 +3,22 @@
  * This file demonstrates how to use the huff library.
  * It creates a test file, compresses it, and then decompresses it.
  *
- * Build:
- *   $ cc -o huff src/main.c -lm -lpthread
  */
 
 #define HUFF_IMPLEMENTATION
 #include "huff.h"
 
 int main(void) {
-    const char *input_file = "test.txt";
-    const char *compressed_file = "test.huff";
-    const char *decompressed_file = "test_decoded.txt";
+    const char *input_file = "tests/text_skewed.txt";
+    const char *compressed_file = "tests/text_skewed.huff";
+    const char *decompressed_file = "tests/text_skewed_decoded.txt";
 
-    // 1. Create a test file
-    printf("[INFO] Creating test file: %s\n", input_file);
-    FILE *f = fopen(input_file, "w");
+    // 1. Check if input file exists
+    FILE *f = fopen(input_file, "rb");
     if (!f) {
-        perror("Failed to create test file");
+        fprintf(stderr, "[ERROR] Input file '%s' not found.\n", input_file);
         return 1;
     }
-    fprintf(f, "Hello Huffman! This is a simple test of the library.\n");
-    fprintf(f, "It should compress this text efficiently.\n");
     fclose(f);
 
     // 2. Compress the file
