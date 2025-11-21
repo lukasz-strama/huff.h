@@ -53,7 +53,7 @@ bool huffman_show_tree(const char *input_path)
 
 Helper to print the generated Huffman codes to stdout.
 ```c
-    void huffman_print_code_table(const HuffCode *codes)
+void huffman_print_code_table(const HuffCode *codes)
 ```
 
 ## Building
