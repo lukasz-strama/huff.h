@@ -34,6 +34,25 @@ Tests were performed on the [Silesia Compression Corpus](https://sun.aei.polsl.p
 
 *System: Linux (Fedora), Single-threaded decoding, Multi-threaded frequency counting.*
 
+## Reference Benchmarks (ANSI C Implementation)
+
+Results from [Michael Dipperstein's ANSI C implementation](https://github.com/MichaelDipperstein/huffman) for comparison.
+
+| File | Original Size | Compressed Size | Ratio | Comp Speed | Decomp Speed |
+|------|---------------|-----------------|-------|------------|--------------|
+| dickens | 10.19 MB | 5.83 MB | 1.75x | 41.61 MB/s | 45.05 MB/s |
+| mozilla | 51.22 MB | 39.98 MB | 1.28x | 43.95 MB/s | 40.87 MB/s |
+| mr | 9.97 MB | 4.62 MB | 2.16x | 57.01 MB/s | 66.09 MB/s |
+| nci | 33.55 MB | 10.22 MB | 3.28x | 58.60 MB/s | 80.60 MB/s |
+| ooffice | 6.15 MB | 5.13 MB | 1.20x | 39.59 MB/s | 36.01 MB/s |
+| osdb | 10.09 MB | 8.34 MB | 1.21x | 38.33 MB/s | 39.22 MB/s |
+| reymont | 6.63 MB | 4.03 MB | 1.64x | 41.02 MB/s | 44.07 MB/s |
+| samba | 21.61 MB | 16.55 MB | 1.31x | 40.12 MB/s | 40.23 MB/s |
+| sao | 7.25 MB | 6.85 MB | 1.06x | 41.27 MB/s | 34.74 MB/s |
+| webster | 41.46 MB | 25.93 MB | 1.60x | 41.75 MB/s | 44.30 MB/s |
+| x-ray | 8.47 MB | 7.02 MB | 1.21x | 51.96 MB/s | 46.53 MB/s |
+| xml | 5.35 MB | 3.71 MB | 1.44x | 41.45 MB/s | 43.55 MB/s |
+
 ## Usage
 
 1.  Copy `huff.h` to your project.
