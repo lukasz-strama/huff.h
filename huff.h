@@ -796,17 +796,8 @@ bool huffman_encode(const char* input_path, const char* output_path,
     }
     io_buffer[io_pos++] = (uint8_t)(bit_buffer & 0xFF);
     bit_buffer >>= 8;
-    bit_count -= 8;  // May become negative, handled by loop condition? No.
-                     // bit_count is number of valid bits.
-                     // If we have 3 bits, we write 1 byte.
-                     // The loop above writes full bytes.
-                     // We need to be careful.
+    bit_count -= 8;  // May become negative, loop will exit
   }
-  // Correct flush logic:
-  // We have `bit_count` bits in `bit_buffer`.
-  // We need to write `ceil(bit_count / 8)` bytes.
-  // But `bit_buffer` is shifted out.
-  // Let's rewrite the flush loop.
 
   // Flush remaining bytes in buffer
   if (io_pos > 0) {
