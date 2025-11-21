@@ -596,6 +596,7 @@ HuffResult huffman_encode(const char* input_path, const char* output_path,
   uint8_t* data = NULL;
   size_t size = 0;
   FILE* out = NULL;
+  uint8_t* io_buffer = NULL;
   HuffResult res = HUFF_SUCCESS;
 
   res = _huff_read_entire_file(input_path, &data, &size);
@@ -684,7 +685,7 @@ HuffResult huffman_encode(const char* input_path, const char* output_path,
 
   uint64_t bit_buffer = 0;
   int bit_count = 0;
-  uint8_t* io_buffer = malloc(HUFF_IO_BUFFER_CAP);
+  io_buffer = malloc(HUFF_IO_BUFFER_CAP);
   if (!io_buffer) {
     res = HUFF_ERROR_MEMORY;
     goto cleanup;
@@ -712,7 +713,6 @@ HuffResult huffman_encode(const char* input_path, const char* output_path,
           if (io_pos + 8 > HUFF_IO_BUFFER_CAP) {
             if (fwrite(io_buffer, 1, io_pos, out) != io_pos) {
               res = HUFF_ERROR_FILE_WRITE;
-              free(io_buffer);
               goto cleanup;
             }
             io_pos = 0;
@@ -740,7 +740,6 @@ HuffResult huffman_encode(const char* input_path, const char* output_path,
         if (io_pos + 8 > HUFF_IO_BUFFER_CAP) {
           if (fwrite(io_buffer, 1, io_pos, out) != io_pos) {
             res = HUFF_ERROR_FILE_WRITE;
-            free(io_buffer);
             goto cleanup;
           }
           io_pos = 0;
@@ -775,7 +774,6 @@ HuffResult huffman_encode(const char* input_path, const char* output_path,
           if (io_pos + 8 > HUFF_IO_BUFFER_CAP) {
             if (fwrite(io_buffer, 1, io_pos, out) != io_pos) {
               res = HUFF_ERROR_FILE_WRITE;
-              free(io_buffer);
               goto cleanup;
             }
             io_pos = 0;
@@ -800,7 +798,6 @@ HuffResult huffman_encode(const char* input_path, const char* output_path,
     if (io_pos >= HUFF_IO_BUFFER_CAP) {
       if (fwrite(io_buffer, 1, io_pos, out) != io_pos) {
         res = HUFF_ERROR_FILE_WRITE;
-        free(io_buffer);
         goto cleanup;
       }
       io_pos = 0;
@@ -814,11 +811,9 @@ HuffResult huffman_encode(const char* input_path, const char* output_path,
   if (io_pos > 0) {
     if (fwrite(io_buffer, 1, io_pos, out) != io_pos) {
       res = HUFF_ERROR_FILE_WRITE;
-      free(io_buffer);
       goto cleanup;
     }
   }
-  free(io_buffer);
 
   clock_gettime(CLOCK_MONOTONIC, &end);
   double time_taken =
@@ -851,6 +846,7 @@ cleanup:
   if (out) {
     fclose(out);
   }
+  free(io_buffer);
   free(data);
   return res;
 }
@@ -880,6 +876,11 @@ HuffResult huffman_decode(const char* input_path, const char* output_path,
   }
 
   // Check for single symbol case optimization
+  // If the file contains only one unique symbol, the Huffman tree is trivial.
+  // The encoder assigns a 1-bit dummy code (0) to this symbol to ensure
+  // a valid bitstream. However, for decoding, we can simply memset the
+  // output buffer with the symbol value, which is orders of magnitude faster
+  // than processing the bitstream bit-by-bit.
   int unique = 0;
   int last_symbol = 0;
   for (int i = 0; i < HUFF_MAX_SYMBOLS; ++i) {
@@ -975,10 +976,8 @@ HuffResult huffman_decode(const char* input_path, const char* output_path,
     if (entry->symbol >= 0) {
       // Fast path: symbol found in table
       if (reader.bit_count < entry->bits) {
-        if (reader.bit_count < entry->bits) {
-          res = HUFF_ERROR_BAD_FORMAT;
-          goto decode_error;
-        }
+        res = HUFF_ERROR_BAD_FORMAT;
+        goto decode_error;
       }
 
       out_buffer[out_pos++] = (uint8_t)entry->symbol;
