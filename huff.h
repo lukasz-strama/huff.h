@@ -201,7 +201,7 @@ static bool _huff_read_header(FILE* in, uint64_t* original_size,
                               uint8_t lengths[HUFF_MAX_SYMBOLS]);
 
 static void* _huff_freq_worker(void* arg);
-static void _huff_parallel_freq_count(const uint8_t* data, size_t size,
+static HuffResult _huff_parallel_freq_count(const uint8_t* data, size_t size,
                                       uint64_t freq[HUFF_MAX_SYMBOLS]);
 
 // --- BitReader Implementation ---
@@ -571,7 +571,7 @@ static void* _huff_freq_worker(void* arg) {
 
 // Parallel symbol frequency counting
 // Splits data into chunks and launches threads (max 64)
-static void _huff_parallel_freq_count(const uint8_t* data, size_t size,
+static HuffResult _huff_parallel_freq_count(const uint8_t* data, size_t size,
                                       uint64_t freq[HUFF_MAX_SYMBOLS]) {
   long num_cores = sysconf(_SC_NPROCESSORS_ONLN);
   if (num_cores < 1) num_cores = 1;
@@ -583,19 +583,28 @@ static void _huff_parallel_freq_count(const uint8_t* data, size_t size,
   if (num_cores > 64) num_cores = 64;
 
   size_t chunk_size = size / num_cores;
+  int threads_created = 0;
+  HuffResult res = HUFF_SUCCESS;
+
   for (int i = 0; i < num_cores; ++i) {
     args[i].data = data + i * chunk_size;
     args[i].size = (i == num_cores - 1) ? (size - i * chunk_size) : chunk_size;
-    pthread_create(&threads[i], NULL, _huff_freq_worker, &args[i]);
+    if (pthread_create(&threads[i], NULL, _huff_freq_worker, &args[i]) != 0) {
+      res = HUFF_ERROR_MEMORY;
+      break;
+    }
+    threads_created++;
   }
 
-  for (int i = 0; i < num_cores; ++i) {
+  for (int i = 0; i < threads_created; ++i) {
     pthread_join(threads[i], NULL);
     // Sum partial results
     for (int j = 0; j < HUFF_MAX_SYMBOLS; ++j) {
       freq[j] += args[i].freq[j];
     }
   }
+
+  return res;
 }
 
 // --- Public API Implementation ---
@@ -618,7 +627,10 @@ HuffResult huffman_encode(const char* input_path, const char* output_path,
     goto cleanup;
   }
   uint64_t freq[HUFF_MAX_SYMBOLS] = {0};
-  _huff_parallel_freq_count(data, size, freq);
+  res = _huff_parallel_freq_count(data, size, freq);
+  if (res != HUFF_SUCCESS) {
+    goto cleanup;
+  }
 
   HuffCode codes[HUFF_MAX_SYMBOLS];
   uint8_t lengths[HUFF_MAX_SYMBOLS] = {0};

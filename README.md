@@ -26,32 +26,6 @@ This library provides a portable*, thread-safe implementation of the Huffman com
 3.  **Portability**: The library relies on POSIX threads (`pthread`) and `sysconf` for parallelization. It is not natively compatible with Windows (MSVC) without a compatibility layer (e.g., pthreads-win32).
 4.  **Compression Ratio**: As a pure entropy coder, it does not perform dictionary-based compression (like LZ77). Its compression ratio will be significantly lower than general-purpose tools like `gzip`, `zstd`, or `xz`.
 
-## Usage
-
-1.  Copy `huff.h` to your project.
-2.  Define `HUFF_IMPLEMENTATION` in **one** source file before including the header.
-
-```c
-#define HUFF_IMPLEMENTATION
-#include "huff.h"
-
-int main(void) {
-    HuffStats stats = {0};
-    
-    // Compress
-    HuffResult res = huffman_encode("data.bin", "data.huff", &stats);
-    if (res != HUFF_SUCCESS) {
-        fprintf(stderr, "Error: %d\n", res);
-        return 1;
-    }
-
-    // Decompress
-    huffman_decode("data.huff", "data_out.bin", NULL);
-    
-    return 0;
-}
-```
-
 ## Benchmarks
 
 Tests were performed on the [Silesia Compression Corpus](https://sun.aei.polsl.pl/~sdeor/index.php?page=silesia).
