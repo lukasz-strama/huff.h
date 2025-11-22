@@ -1,24 +1,56 @@
-# huff
+# huff.h
 
-A fast and simple Huffman Encoder/Decoder single-header library for C/C++.
+A single-header C99 library implementing static Huffman coding with focus on performance.
 
-**This library is designed to be one of the fastest pure Huffman implementations available, pushing the algorithm to its theoretical performance limits on modern hardware.**
+This library provides a portable*, thread-safe implementation of the Huffman compression algorithm. It is designed primarily for educational purposes and as a reference implementation for academic study.
 
-## Features
+## Characteristics
 
-*   **Monolithic single-header**: Easy to integrate into any C/C++ project.
-*   **High Performance**: Optimized with 12-bit Lookup Tables (LUT) for fast decoding and 64-bit buffer fast-paths for encoding.
-*   **Multi-threaded Frequency Counting**: Uses `pthread` to parallelize the initial file scan, significantly speeding up the compression of large files.
-*   **Optimized Single-Threaded Core**: The encoding and decoding loops are highly optimized single-threaded implementations that saturate memory bandwidth.
-*   **Canonical Huffman**: Uses Canonical Huffman codes to minimize header size (256 bytes for code lengths) and ensure optimal compression for small files.
-*   **Efficient I/O**: Uses internal buffering (4KB) to minimize system calls during file operations.
-*   **Statistics**: Calculates Shannon entropy, average code length, and coding efficiency.
-*   **Portable (POSIX)**: Written in C99. Depends only on the standard library and pthreads (not available on Windows by default).
+*   **Language**: C99 standard.
+*   **Type**: Single-header library (STB style).
+*   **Algorithm**: Static Huffman coding (two-pass).
+*   **Dependencies**: Standard C library (`stdlib.h`, `stdio.h`, etc.) and POSIX threads (`pthread.h`).
+*   **Thread Safety**: Reentrant API with no global state.
 
-## Limitations
+## Implementation Details
 
-*   **Memory Usage (Encoder)**: The encoder currently reads the *entire input file into memory* to perform parallel frequency counting and fast encoding. This limits the maximum file size to available RAM. The decoder, however, uses buffered I/O and has a low memory footprint.
-*   **Static Huffman**: This is a two-pass static Huffman implementation. It requires the entire dataset to be available to calculate frequencies before encoding begins, making it unsuitable for real-time streams.
+*   **Canonical Huffman Codes**: Uses code lengths to reconstruct trees, minimizing header overhead (256 bytes for lengths).
+*   **Table-Based Decoding**: Accelerates decoding using a 12-bit Lookup Table (LUT) to process multiple bits per cycle.
+*   **Parallelization**: Utilizes `pthread` to parallelize the frequency counting phase during encoding.
+*   **Bit-Level Optimization**: Implements a 64-bit buffered bit writer to reduce I/O overhead and function call costs.
+
+## Limitations & Weak Points
+
+1.  **Memory Consumption (Encoder)**: The encoder reads the **entire input file into memory** to perform parallel frequency counting and fast encoding. This limits the maximum file size to available RAM and makes it unsuitable for very large files or memory-constrained environments.
+2.  **Two-Pass Nature**: Being a static Huffman implementation, it requires two passes over the data (one for frequency counting, one for encoding). It cannot be used for streaming data where the full content is not known in advance.
+3.  **Portability**: The library relies on POSIX threads (`pthread`) and `sysconf` for parallelization. It is not natively compatible with Windows (MSVC) without a compatibility layer (e.g., pthreads-win32).
+4.  **Compression Ratio**: As a pure entropy coder, it does not perform dictionary-based compression (like LZ77). Its compression ratio will be significantly lower than general-purpose tools like `gzip`, `zstd`, or `xz`.
+
+## Usage
+
+1.  Copy `huff.h` to your project.
+2.  Define `HUFF_IMPLEMENTATION` in **one** source file before including the header.
+
+```c
+#define HUFF_IMPLEMENTATION
+#include "huff.h"
+
+int main(void) {
+    HuffStats stats = {0};
+    
+    // Compress
+    HuffResult res = huffman_encode("data.bin", "data.huff", &stats);
+    if (res != HUFF_SUCCESS) {
+        fprintf(stderr, "Error: %d\n", res);
+        return 1;
+    }
+
+    // Decompress
+    huffman_decode("data.huff", "data_out.bin", NULL);
+    
+    return 0;
+}
+```
 
 ## Benchmarks
 
@@ -60,51 +92,28 @@ Results from [Michael Dipperstein's ANSI C implementation](https://github.com/Mi
 | x-ray | 8.47 MB | 7.02 MB | 1.21x | 51.96 MB/s | 46.53 MB/s |
 | xml | 5.35 MB | 3.71 MB | 1.44x | 41.45 MB/s | 43.55 MB/s |
 
-## Usage
-
-1.  Copy `huff.h` to your project.
-2.  Define `HUFF_IMPLEMENTATION` in **one** source file before including the header to create the implementation.
-
-```c
-#define HUFF_IMPLEMENTATION
-#include "huff.h"
-
-int main(void) {
-    HuffStats stats = {0};
-    
-    // Compress
-    if (huffman_encode("data.bin", "data.huff", &stats)) {
-        printf("Compressed size: %lu bytes\n", stats.compressed_size);
-    }
-
-    // Decompress
-    huffman_decode("data.huff", "data_out.bin", NULL);
-    
-    return 0;
-}
-```
 
 ## API Reference
-Compresses the input file using Huffman coding.
-```c
-bool huffman_encode(const char *input_path, const char *output_path, HuffStats *stats)
-```
-*   `stats`: Optional pointer to `HuffStats` to retrieve compression metrics (entropy, time, etc.).
 
-Decompresses a Huffman-encoded file.
+### `huffman_encode`
 ```c
-bool huffman_decode(const char *input_path, const char *output_path, HuffStats *stats)
+HuffResult huffman_encode(const char *input_path, const char *output_path, HuffStats *stats);
 ```
+Reads the input file, calculates symbol frequencies, builds a canonical Huffman tree, and writes the compressed output.
+*   **Returns**: `HUFF_SUCCESS` (0) on success, or a non-zero error code.
 
-Reconstructs and displays the Huffman tree and code table from a compressed file.
+### `huffman_decode`
 ```c
-bool huffman_show_tree(const char *input_path)
+HuffResult huffman_decode(const char *input_path, const char *output_path, HuffStats *stats);
 ```
+Reads a compressed file, reconstructs the Huffman tree from the header, and decodes the data.
 
-Helper to print the generated Huffman codes to stdout.
-```c
-void huffman_print_code_table(const HuffCode *codes)
-```
+### `HuffStats`
+A structure containing performance metrics:
+*   `original_size` / `compressed_size`: File sizes in bytes.
+*   `time_taken`: Execution time in seconds.
+*   `entropy`: Shannon entropy of the source data.
+*   `avg_code_len`: Average length of the generated codes.
 
 ## Building
 
@@ -119,13 +128,34 @@ cc -o nob nob.c
 
 This will compile the example application to `build/huff`.
 
-## Who is this for?
+## Usage
 
-This library is designed as a **high-performance foundation** for other projects. It is ideal for:
-*   **Custom Compression Experiments**: Like building your own compression algorithms (e.g., BWT + Huffman, LZ77 + Huffman) who need a fast, reliable entropy coding backend without writing it from scratch.
-*   **Quick Integration**: Projects that need standard Huffman coding immediately with zero dependencies and minimal integration effort.
-*   **Educational Value**: A clean, modern reference for how to implement Huffman coding in C, demonstrating advanced optimizations like Canonical codes and LUT decoding.
+1.  Copy `huff.h` to your project.
+2.  Define `HUFF_IMPLEMENTATION` in **one** source file before including the header.
+
+```c
+#define HUFF_IMPLEMENTATION
+#include "huff.h"
+
+int main(void) {
+    HuffStats stats = {0};
+    
+    // Compress
+    HuffResult res = huffman_encode("data.bin", "data.huff", &stats);
+    if (res == HUFF_SUCCESS) {
+        printf("Compressed size: %lu bytes\n", stats.compressed_size);
+        printf("Entropy: %.4f bits/symbol\n", stats.entropy);
+    } else {
+        fprintf(stderr, "Compression failed: error code %d\n", res);
+    }
+
+    // Decompress
+    huffman_decode("data.huff", "data_out.bin", NULL);
+    
+    return 0;
+}
+```
 
 ## License
 
-MIT License
+MIT License. See `huff.h` for full text.
