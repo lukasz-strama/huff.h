@@ -133,6 +133,13 @@ HuffResult huffman_decode(const char* input_path, const char* output_path,
 #define HUFF_DEC_TABLE_BITS 12
 #define HUFF_DEC_TABLE_SIZE (1 << HUFF_DEC_TABLE_BITS)
 
+// Force inline for hot path functions
+#if defined(__GNUC__) || defined(__clang__)
+#define HUFF_INLINE static inline __attribute__((always_inline))
+#else
+#define HUFF_INLINE static inline
+#endif
+
 // --- Internal Structures ---
 
 typedef struct {
@@ -216,14 +223,14 @@ static void _huff_bit_reader_init(BitReader* reader, FILE* file) {
   reader->exhausted = false;
 }
 
-static bool _huff_bit_reader_fill_io(BitReader* reader) {
+HUFF_INLINE bool _huff_bit_reader_fill_io(BitReader* reader) {
   reader->io_pos = 0;
   size_t n = fread(reader->io_buffer, 1, HUFF_IO_BUFFER_CAP, reader->file);
   reader->io_end = n;
   return n > 0;
 }
 
-static void _huff_bit_reader_ensure(BitReader* reader, uint32_t n) {
+HUFF_INLINE void _huff_bit_reader_ensure(BitReader* reader, uint32_t n) {
   while (reader->bit_count < n) {
     if (reader->io_pos >= reader->io_end) {
       if (!_huff_bit_reader_fill_io(reader)) {
@@ -244,14 +251,14 @@ static void _huff_bit_reader_free(BitReader* reader) {
 
 // --- Heap Implementation ---
 
-static bool _huff_heap_less(const HuffHeap* heap, int a, int b) {
+HUFF_INLINE bool _huff_heap_less(const HuffHeap* heap, int a, int b) {
   const HuffNode* nodes = heap->nodes;
   if (nodes[a].weight < nodes[b].weight) return true;
   if (nodes[a].weight > nodes[b].weight) return false;
   return a < b;
 }
 
-static void _huff_heap_swap(int* a, int* b) {
+HUFF_INLINE void _huff_heap_swap(int* a, int* b) {
   int tmp = *a;
   *a = *b;
   *b = tmp;
