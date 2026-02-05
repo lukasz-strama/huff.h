@@ -994,6 +994,60 @@ HuffResult huffman_decode(const char* input_path, const char* output_path,
 
   HuffResult res = HUFF_SUCCESS;
 
+  // Fast path: decode 4 symbols per iteration when possible
+  // This reduces loop overhead and improves instruction-level parallelism
+  while (produced + 4 <= original_size) {
+    // Ensure we have enough bits for 4 table lookups (worst case: 4 * 12 = 48 bits)
+    _huff_bit_reader_ensure(&reader, 48);
+    if (reader.bit_count < 48) break; // Not enough data, fall back to single decode
+
+    // Decode 4 symbols using table lookup
+    uint16_t peek0 = (uint16_t)(reader.bit_buffer & (HUFF_DEC_TABLE_SIZE - 1));
+    HuffDecEntry* e0 = &table[peek0];
+    if (e0->symbol < 0) break; // Slow path needed
+    
+    reader.bit_buffer >>= e0->bits;
+    reader.bit_count -= e0->bits;
+
+    uint16_t peek1 = (uint16_t)(reader.bit_buffer & (HUFF_DEC_TABLE_SIZE - 1));
+    HuffDecEntry* e1 = &table[peek1];
+    if (e1->symbol < 0) break;
+    
+    reader.bit_buffer >>= e1->bits;
+    reader.bit_count -= e1->bits;
+
+    uint16_t peek2 = (uint16_t)(reader.bit_buffer & (HUFF_DEC_TABLE_SIZE - 1));
+    HuffDecEntry* e2 = &table[peek2];
+    if (e2->symbol < 0) break;
+    
+    reader.bit_buffer >>= e2->bits;
+    reader.bit_count -= e2->bits;
+
+    uint16_t peek3 = (uint16_t)(reader.bit_buffer & (HUFF_DEC_TABLE_SIZE - 1));
+    HuffDecEntry* e3 = &table[peek3];
+    if (e3->symbol < 0) break;
+    
+    reader.bit_buffer >>= e3->bits;
+    reader.bit_count -= e3->bits;
+
+    // Write 4 symbols at once
+    out_buffer[out_pos++] = (uint8_t)e0->symbol;
+    out_buffer[out_pos++] = (uint8_t)e1->symbol;
+    out_buffer[out_pos++] = (uint8_t)e2->symbol;
+    out_buffer[out_pos++] = (uint8_t)e3->symbol;
+    produced += 4;
+
+    // Flush output buffer if full
+    if (out_pos >= HUFF_IO_BUFFER_CAP - 4) {
+      if (fwrite(out_buffer, 1, out_pos, out) != out_pos) {
+        res = HUFF_ERROR_FILE_WRITE;
+        goto decode_error;
+      }
+      out_pos = 0;
+    }
+  }
+
+  // Remainder loop: decode remaining symbols one at a time
   while (produced < original_size) {
     _huff_bit_reader_ensure(&reader, HUFF_DEC_TABLE_BITS);
 
