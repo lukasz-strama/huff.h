@@ -140,6 +140,14 @@ HuffResult huffman_decode(const char* input_path, const char* output_path,
 #define HUFF_INLINE static inline
 #endif
 
+// Write 64-bit value in little-endian format
+// Modern compilers optimize memcpy to a single store on LE systems
+#define HUFF_WRITE64_LE(buf, pos, val) do { \
+  uint64_t _v = (val); \
+  memcpy((buf) + (pos), &_v, 8); \
+  (pos) += 8; \
+} while(0)
+
 // --- Internal Structures ---
 
 typedef struct {
@@ -772,16 +780,7 @@ HuffResult huffman_encode(const char* input_path, const char* output_path,
             }
             io_pos = 0;
           }
-          // Unroll 8-byte write (Little Endian)
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 8);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 16);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 24);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 32);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 40);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 48);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 56);
-
+          HUFF_WRITE64_LE(io_buffer, io_pos, bit_buffer);
           bit_buffer = 0;
           bit_count = 0;
         }
@@ -800,15 +799,8 @@ HuffResult huffman_encode(const char* input_path, const char* output_path,
           io_pos = 0;
         }
 
-        // Write 8 bytes manually (Little Endian)
-        io_buffer[io_pos++] = (uint8_t)(bit_buffer);
-        io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 8);
-        io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 16);
-        io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 24);
-        io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 32);
-        io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 40);
-        io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 48);
-        io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 56);
+        // Write 8 bytes (Little Endian)
+        HUFF_WRITE64_LE(io_buffer, io_pos, bit_buffer);
 
         // Calculate how many bits were written and put the rest in the new
         // buffer
@@ -833,14 +825,7 @@ HuffResult huffman_encode(const char* input_path, const char* output_path,
             }
             io_pos = 0;
           }
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 8);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 16);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 24);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 32);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 40);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 48);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 56);
+          HUFF_WRITE64_LE(io_buffer, io_pos, bit_buffer);
           bit_buffer = 0;
           bit_count = 0;
         }
@@ -1028,34 +1013,38 @@ HuffResult huffman_decode(const char* input_path, const char* output_path,
     _huff_bit_reader_ensure(&reader, 48);
     if (reader.bit_count < 48) break; // Not enough data, fall back to single decode
 
-    // Decode 4 symbols using table lookup
-    uint16_t peek0 = (uint16_t)(reader.bit_buffer & (HUFF_DEC_TABLE_SIZE - 1));
+    // Peek and validate all 4 symbols BEFORE modifying state
+    // This prevents corruption if we need to bail to slow path
+    uint64_t bb = reader.bit_buffer;
+    uint32_t bc = reader.bit_count;
+    
+    uint16_t peek0 = (uint16_t)(bb & (HUFF_DEC_TABLE_SIZE - 1));
     HuffDecEntry* e0 = &table[peek0];
     if (e0->symbol < 0) break; // Slow path needed
-    
-    reader.bit_buffer >>= e0->bits;
-    reader.bit_count -= e0->bits;
+    bb >>= e0->bits;
+    bc -= e0->bits;
 
-    uint16_t peek1 = (uint16_t)(reader.bit_buffer & (HUFF_DEC_TABLE_SIZE - 1));
+    uint16_t peek1 = (uint16_t)(bb & (HUFF_DEC_TABLE_SIZE - 1));
     HuffDecEntry* e1 = &table[peek1];
     if (e1->symbol < 0) break;
-    
-    reader.bit_buffer >>= e1->bits;
-    reader.bit_count -= e1->bits;
+    bb >>= e1->bits;
+    bc -= e1->bits;
 
-    uint16_t peek2 = (uint16_t)(reader.bit_buffer & (HUFF_DEC_TABLE_SIZE - 1));
+    uint16_t peek2 = (uint16_t)(bb & (HUFF_DEC_TABLE_SIZE - 1));
     HuffDecEntry* e2 = &table[peek2];
     if (e2->symbol < 0) break;
-    
-    reader.bit_buffer >>= e2->bits;
-    reader.bit_count -= e2->bits;
+    bb >>= e2->bits;
+    bc -= e2->bits;
 
-    uint16_t peek3 = (uint16_t)(reader.bit_buffer & (HUFF_DEC_TABLE_SIZE - 1));
+    uint16_t peek3 = (uint16_t)(bb & (HUFF_DEC_TABLE_SIZE - 1));
     HuffDecEntry* e3 = &table[peek3];
     if (e3->symbol < 0) break;
-    
-    reader.bit_buffer >>= e3->bits;
-    reader.bit_count -= e3->bits;
+    bb >>= e3->bits;
+    bc -= e3->bits;
+
+    // All 4 symbols validated - now commit the state changes
+    reader.bit_buffer = bb;
+    reader.bit_count = bc;
 
     // Write 4 symbols at once
     out_buffer[out_pos++] = (uint8_t)e0->symbol;
