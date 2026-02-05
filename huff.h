@@ -553,26 +553,53 @@ static bool _huff_read_header(FILE* in, uint64_t* original_size,
 // --- Threading Helpers ---
 
 // Worker function for frequency counting thread
-// Uses loop unrolling
+// Uses 4 interleaved histograms to avoid pipeline stalls from dependent
+// memory accesses when consecutive bytes hash to the same bucket.
 static void* _huff_freq_worker(void* arg) {
   FreqThreadArgs* args = (FreqThreadArgs*)arg;
-  memset(args->freq, 0, sizeof(args->freq));
+  
+  // Use 4 separate histograms to hide memory latency
+  // When bytes map to the same bucket, CPU must wait for previous increment.
+  // Using multiple histograms allows parallel updates.
+  uint64_t freq0[HUFF_MAX_SYMBOLS] = {0};
+  uint64_t freq1[HUFF_MAX_SYMBOLS] = {0};
+  uint64_t freq2[HUFF_MAX_SYMBOLS] = {0};
+  uint64_t freq3[HUFF_MAX_SYMBOLS] = {0};
+  
+  const uint8_t* data = args->data;
+  size_t size = args->size;
   size_t i = 0;
-  // Process 8 bytes at a time
-  for (; i + 8 <= args->size; i += 8) {
-    args->freq[args->data[i + 0]]++;
-    args->freq[args->data[i + 1]]++;
-    args->freq[args->data[i + 2]]++;
-    args->freq[args->data[i + 3]]++;
-    args->freq[args->data[i + 4]]++;
-    args->freq[args->data[i + 5]]++;
-    args->freq[args->data[i + 6]]++;
-    args->freq[args->data[i + 7]]++;
+  
+  // Process 16 bytes at a time, distributing across 4 histograms
+  for (; i + 16 <= size; i += 16) {
+    freq0[data[i + 0]]++;
+    freq1[data[i + 1]]++;
+    freq2[data[i + 2]]++;
+    freq3[data[i + 3]]++;
+    freq0[data[i + 4]]++;
+    freq1[data[i + 5]]++;
+    freq2[data[i + 6]]++;
+    freq3[data[i + 7]]++;
+    freq0[data[i + 8]]++;
+    freq1[data[i + 9]]++;
+    freq2[data[i + 10]]++;
+    freq3[data[i + 11]]++;
+    freq0[data[i + 12]]++;
+    freq1[data[i + 13]]++;
+    freq2[data[i + 14]]++;
+    freq3[data[i + 15]]++;
   }
+  
   // Finish remaining bytes
-  for (; i < args->size; ++i) {
-    args->freq[args->data[i]]++;
+  for (; i < size; ++i) {
+    freq0[data[i]]++;
   }
+  
+  // Merge histograms into output
+  for (int j = 0; j < HUFF_MAX_SYMBOLS; ++j) {
+    args->freq[j] = freq0[j] + freq1[j] + freq2[j] + freq3[j];
+  }
+  
   return NULL;
 }
 
