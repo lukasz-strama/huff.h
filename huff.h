@@ -140,6 +140,14 @@ HuffResult huffman_decode(const char* input_path, const char* output_path,
 #define HUFF_INLINE static inline
 #endif
 
+// Write 64-bit value in little-endian format
+// Modern compilers optimize memcpy to a single store on LE systems
+#define HUFF_WRITE64_LE(buf, pos, val) do { \
+  uint64_t _v = (val); \
+  memcpy((buf) + (pos), &_v, 8); \
+  (pos) += 8; \
+} while(0)
+
 // --- Internal Structures ---
 
 typedef struct {
@@ -772,16 +780,7 @@ HuffResult huffman_encode(const char* input_path, const char* output_path,
             }
             io_pos = 0;
           }
-          // Unroll 8-byte write (Little Endian)
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 8);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 16);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 24);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 32);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 40);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 48);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 56);
-
+          HUFF_WRITE64_LE(io_buffer, io_pos, bit_buffer);
           bit_buffer = 0;
           bit_count = 0;
         }
@@ -800,15 +799,8 @@ HuffResult huffman_encode(const char* input_path, const char* output_path,
           io_pos = 0;
         }
 
-        // Write 8 bytes manually (Little Endian)
-        io_buffer[io_pos++] = (uint8_t)(bit_buffer);
-        io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 8);
-        io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 16);
-        io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 24);
-        io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 32);
-        io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 40);
-        io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 48);
-        io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 56);
+        // Write 8 bytes (Little Endian)
+        HUFF_WRITE64_LE(io_buffer, io_pos, bit_buffer);
 
         // Calculate how many bits were written and put the rest in the new
         // buffer
@@ -833,14 +825,7 @@ HuffResult huffman_encode(const char* input_path, const char* output_path,
             }
             io_pos = 0;
           }
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 8);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 16);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 24);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 32);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 40);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 48);
-          io_buffer[io_pos++] = (uint8_t)(bit_buffer >> 56);
+          HUFF_WRITE64_LE(io_buffer, io_pos, bit_buffer);
           bit_buffer = 0;
           bit_count = 0;
         }
